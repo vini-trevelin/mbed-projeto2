@@ -8,6 +8,10 @@ C12832 lcd(SPI_MOSI, SPI_SCK, SPI_MISO, p8, p11); // declarei o lcd pra poder de
 Sht31 sht31(I2C_SDA, I2C_SCL);                    // declaro os dois sensores (temp e nivel)
 PwmOut led_motor(p23);                            // led que sinaliza o motor e o PWM nele
 DigitalOut led_aquecedor(p25);                    // led que sinaliza o aquecedor
+DigitalIn porta(p10);                             // Porta da maquina (1 fechada, 0 aberta)
+DigitalIn iniciarPausar(p13);                     // botão de iniciar pausar a maquina
+DigitalIn selec1(p17);                            // botão de seleciona 1
+DigitalIn selec2(p18);                            // botão de seleciona 2
 
 // Usei o delay para colocar os tempos mas provavelmente vamos ter q usar interrupt (por causa do pause)
 
@@ -29,6 +33,8 @@ DigitalOut led_aquecedor(p25);                    // led que sinaliza o aquecedo
 
 static int status = 0; // variavel que indica em qual operação a maquina está:
 // 0 - não operando, 1 - enchimento/molho, 2 - centrifugação, 3 - enxague, 4 - secagem
+
+static int pause = 1; //indica se a maquina esta pausada ou não (começa pausada)
 
 // etapa 1
 static int volume_enchimento[] = {50, 30, 70, 70, 90, 60, 90, 23}; // array com todas volumes (L) de água por ordem de ID
@@ -63,7 +69,10 @@ int processo_molho(int id)
         lcd.printf("Nivel: %.2f L", nivel);
         wait_ms(100);
     }
-
+    
+    while(porta.read()==0); //fica preco aqui, esperando a porta ser fechada
+            //pode colocar uma instrução eventualmente
+    
     lcd.cls();
     lcd.locate(3, 3);
     lcd.printf("Roupas de molho");
@@ -90,6 +99,9 @@ int processo_enxague()
     lcd.printf("Programa necessita: 0 L");
     lcd.printf("  %d", status);
 
+    while(porta.read()==0);//fica preco aqui, esperando a porta ser fechada
+            //pode colocar uma instrução eventualmente
+    
     do
     {
         nivel = sht31.readHumidity();
@@ -115,6 +127,8 @@ int processo_centrifugacao(int id)
     status = 3;
     led_motor.period(1);
 
+    while(porta.read()==0);//fica preco aqui, esperando a porta ser fechada
+            //pode colocar uma instrução eventualmente
     do
     {
         led_motor = DC[id];
@@ -154,6 +168,9 @@ int processo_secagem(int id)
         wait_ms(100);
     }
 
+    while(porta.read()==0);//fica preco aqui, esperando a porta ser fechada
+            //pode colocar uma instrução eventualmente
+
     lcd.cls();
     lcd.locate(3, 3);
     lcd.printf("Secando roupas");
@@ -172,11 +189,40 @@ int processo_secagem(int id)
     return 1;
 }
 
+int escolhaOperacao(){
+    int selecao = 0;
+    
+    lcd.cls();
+    lcd.locate(3, 3);
+    lcd.printf("Selecione o prog");
+    lcd.locate(3, 13);
+    lcd.printf(" I/P para comecar");
+    wait_ms(1750);
+    
+    lcd.cls();
+    lcd.locate(3, 3);
+    lcd.printf("1-Prox. 2-Ante.");
+    
+    while(iniciarPausar.read()==0){
+        if(selec1.read() == 1 && selecao < 7)
+            selecao++;
+        if(selec2.read() == 1 && selecao > 0)
+            selecao--;
+
+        lcd.locate(3 ,13);
+        lcd.printf("Selecionado: %d ", selecao + 1);
+        
+        wait_ms(100);
+    }
+    pause = 0; //escolheu o modo, agora vai comecar.
+    return selecao;
+}
+
 int main()
 {
     int start = 1, i, id_operacao;
-
-    id_operacao = 3; // usei opção 3 pra teste
+    
+    id_operacao = escolhaOperacao();
 
     while (1)
     {
