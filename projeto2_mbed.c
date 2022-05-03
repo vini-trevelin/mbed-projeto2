@@ -52,6 +52,32 @@ static int tempo_centrifugacao[] = {20, 20, 30, 25, 30, 15, 35, 20}; // array co
 static int temperatura_secagem[] = {40, 43, 0, 47, 50, 39, 48, 45}; // array com todas temperaturas (Cº) de secagem por ordem de ID
 static int tempo_secagem[] = {15, 7, 0, 9, 12, 10, 17, 8};          // array com todos tempos de secagem por ordem de ID
 
+
+void verificarPorta(){
+    if(porta.read()==0){
+        lcd.cls();
+        lcd.locate(3, 3);
+        lcd.printf("Feche a porta");
+        while(porta.read()==0){
+            wait_ms(250);
+        }
+    }
+}
+
+/*
+void interPause(){ //0 = pausada
+    if(!pause){
+        pause = !pause;
+        lcd.cls();
+        lcd.locate(3, 3);
+        lcd.printf("Maquina pausada");
+        desligarTudo();
+        while(pause)
+        
+    }
+}
+*/
+
 int processo_molho(int id)
 {
     float nivel = 0.0;
@@ -69,9 +95,8 @@ int processo_molho(int id)
         lcd.printf("Nivel: %.2f L", nivel);
         wait_ms(100);
     }
-    
-    while(porta.read()==0); //fica preco aqui, esperando a porta ser fechada
-            //pode colocar uma instrução eventualmente
+
+    verificarPorta();
     
     lcd.cls();
     lcd.locate(3, 3);
@@ -99,9 +124,6 @@ int processo_enxague()
     lcd.printf("Programa necessita: 0 L");
     lcd.printf("  %d", status);
 
-    while(porta.read()==0);//fica preco aqui, esperando a porta ser fechada
-            //pode colocar uma instrução eventualmente
-    
     do
     {
         nivel = sht31.readHumidity();
@@ -109,6 +131,8 @@ int processo_enxague()
         lcd.printf("Nivel: %.2f L", nivel);
         wait_ms(100);
     } while (10.0 < nivel); // coloquei 10 L pq nao consigo ir a 0 com o mouse
+
+     verificarPorta();
 
     lcd.cls();
     lcd.locate(3, 3);
@@ -127,8 +151,14 @@ int processo_centrifugacao(int id)
     status = 3;
     led_motor.period(1);
 
-    while(porta.read()==0);//fica preco aqui, esperando a porta ser fechada
-            //pode colocar uma instrução eventualmente
+    verificarPorta();
+    
+    lcd.locate(3, 3);
+    lcd.printf("Realizando ");
+    lcd.locate(3, 13);
+    lcd.printf("Centrifugacao");
+    
+    
     do
     {
         led_motor = DC[id];
@@ -168,8 +198,7 @@ int processo_secagem(int id)
         wait_ms(100);
     }
 
-    while(porta.read()==0);//fica preco aqui, esperando a porta ser fechada
-            //pode colocar uma instrução eventualmente
+    verificarPorta();
 
     lcd.cls();
     lcd.locate(3, 3);
@@ -189,19 +218,101 @@ int processo_secagem(int id)
     return 1;
 }
 
-int escolhaOperacao(){
-    int selecao = 0;
-    
+void printSelecao(int s){
     lcd.cls();
     lcd.locate(3, 3);
-    lcd.printf("Selecione o prog");
+    lcd.printf("Iniciando Programa");
     lcd.locate(3, 13);
-    lcd.printf(" I/P para comecar");
+    switch(s){
+        case 0:
+        lcd.printf("Dia a dia");
+        break;
+        case 1:
+        lcd.printf("Rapido");
+        break;
+        case 2:
+        lcd.printf("Coloridas");
+        break;
+        case 3:
+        lcd.printf("Brancas");
+        break;
+        case 4:
+        lcd.printf("Cama e Banho");
+        break;
+        case 5:
+        lcd.printf("Delicadas");
+        break;
+        case 6:
+        lcd.printf("Pesado/jeans");
+        break;
+        case 7:
+        lcd.printf("1 Hora pronto");
+        break;
+    }
+    wait(2);
+    
+}
+void alterarCentrifugacao(){
+    int selecao = 0;
+    lcd.cls();
+    lcd.locate(3, 3);
+    lcd.printf("Inicar/Pausar p/ selecionar");
+    wait_ms(1500);
+    lcd.cls();
+    lcd.locate(3, 3);
+    lcd.printf("1-Proximo 2-Anterior ");
+    while(iniciarPausar.read()==0){
+        if(selec1.read() == 1 && selecao < 7)
+            selecao++;
+        if(selec2.read() == 1 && selecao > 0)
+            selecao--;
+
+        lcd.locate(3 ,13);
+        lcd.printf("Selecionado: %d ", selecao + 1);
+        
+        wait_ms(100);
+    }
+    
+    //TODO
+    //Alterar as configs da centrifugação
+    //potencia e tempo 
+    //
+    
+}
+
+void perguntaAlterarCentrifugacao(){
+    pause = 1;
+    int ok = 0;
+    lcd.cls();
+    lcd.locate(3, 3);
+    lcd.printf("Alterar as config.");
+    lcd.locate(3, 13);
+    lcd.printf("de centrifugacao? 1-S 2-N");
+    while(!ok){
+        if(selec1.read()==1){
+            alterarCentrifugacao();
+            ok=1;
+        }
+        if(selec2.read()==1)
+            ok=1; 
+        wait_ms(100);
+    }
+    wait(2);
+}
+
+int escolhaOperacao(){
+    int selecao = 0;
+    pause = 1; //para quando apertar o iniciar pausa de escolha sair do interrupt do botão
+    lcd.cls();
+    lcd.locate(3, 3);
+    lcd.printf("Selecione o programa");
+    lcd.locate(3, 13);
+    lcd.printf("Inicar/Pausar p/ comecar");
     wait_ms(1750);
     
     lcd.cls();
     lcd.locate(3, 3);
-    lcd.printf("1-Prox. 2-Ante.");
+    lcd.printf("1-Proximo 2-Anterior");
     
     while(iniciarPausar.read()==0){
         if(selec1.read() == 1 && selecao < 7)
@@ -214,7 +325,12 @@ int escolhaOperacao(){
         
         wait_ms(100);
     }
-    pause = 0; //escolheu o modo, agora vai comecar.
+    
+    
+    pause = 0; //interrupt do botão volta a funcionar
+    
+    printSelecao(selecao);
+    
     return selecao;
 }
 
@@ -222,12 +338,16 @@ int main()
 {
     int start = 1, i, id_operacao;
     
-    id_operacao = escolhaOperacao();
+    //Tem q pensar melhor como fazer isso
+    //provavelmente só dps que usarmos interrupt para esperar
+    //iniciarPausar.fall(callback(&interPause));
 
     while (1)
     {
-        // testei a chamada das funções, aparentemente funcionando
-        // os prints no lcd podemos tirar dps
+        //ainda não terminei 
+        //perguntaAlterarCentrifugacao();
+        
+        id_operacao = escolhaOperacao();
         if (start)
         {
 
@@ -241,5 +361,8 @@ int main()
             processo_secagem(id_operacao);
         }
         wait(1);
+        lcd.cls();
+        lcd.locate(3, 3);
+        lcd.printf("Programa Finalizado!");
     }
 }
