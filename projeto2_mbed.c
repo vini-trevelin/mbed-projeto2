@@ -4,14 +4,19 @@
 #include "C12832.h"
 #include "Sht31.h"
 
+Ticker t1;
+
 C12832 lcd(SPI_MOSI, SPI_SCK, SPI_MISO, p8, p11); // declarei o lcd pra poder debugar
 Sht31 sht31(I2C_SDA, I2C_SCL);                    // declaro os dois sensores (temp e nivel)
 PwmOut led_motor(p23);                            // led que sinaliza o motor e o PWM nele
 DigitalOut led_aquecedor(p25);                    // led que sinaliza o aquecedor
 DigitalIn porta(p10);                             // Porta da maquina (1 fechada, 0 aberta)
+DigitalIn ligaDesliga(p13);
 DigitalIn iniciarPausar(p13);                     // botão de iniciar pausar a maquina
 DigitalIn selec1(p17);                            // botão de seleciona 1
 DigitalIn selec2(p18);                            // botão de seleciona 2
+
+InterruptIn interIniPausar(p13);
 
 // Usei o delay para colocar os tempos mas provavelmente vamos ter q usar interrupt (por causa do pause)
 
@@ -34,7 +39,10 @@ DigitalIn selec2(p18);                            // botão de seleciona 2
 static int status = 0; // variavel que indica em qual operação a maquina está:
 // 0 - não operando, 1 - enchimento/molho, 2 - centrifugação, 3 - enxague, 4 - secagem
 
-static int pause = 1; //indica se a maquina esta pausada ou não (começa pausada)
+static int ligado = 1;
+static int selecaoMode = 0; //usa o iniciarPausar pra selecionar então uma flag pra não pausar na seleção
+static int pause = 0; //indica se a maquina esta pausada ou não (começa pausada)
+static int contLigarDesligar = 0;
 
 // etapa 1
 static int volume_enchimento[] = {50, 30, 70, 70, 90, 60, 90, 23}; // array com todas volumes (L) de água por ordem de ID
@@ -52,6 +60,7 @@ static int tempo_centrifugacao[] = {20, 20, 30, 25, 30, 15, 35, 20}; // array co
 static int temperatura_secagem[] = {40, 43, 0, 47, 50, 39, 48, 45}; // array com todas temperaturas (Cº) de secagem por ordem de ID
 static int tempo_secagem[] = {15, 7, 0, 9, 12, 10, 17, 8};          // array com todos tempos de secagem por ordem de ID
 
+void controleEstados();
 
 void verificarPorta(){
     if(porta.read()==0){
@@ -64,19 +73,14 @@ void verificarPorta(){
     }
 }
 
-/*
-void interPause(){ //0 = pausada
-    if(!pause){
+
+void interPause(){ //só troca o estado de pause, quem pausa é o ticker
+    if(!selecaoMode){
         pause = !pause;
-        lcd.cls();
-        lcd.locate(3, 3);
-        lcd.printf("Maquina pausada");
-        desligarTudo();
-        while(pause)
-        
+        wait_ms(50); //estava lendo duas vezes a mesma apertada
     }
 }
-*/
+
 
 int processo_molho(int id)
 {
@@ -219,6 +223,8 @@ int processo_secagem(int id)
 }
 
 void printSelecao(int s){
+    //poderia ter uma matriz de string com os nomes
+    //não precisaria dessa função dai
     lcd.cls();
     lcd.locate(3, 3);
     lcd.printf("Iniciando Programa");
@@ -270,18 +276,54 @@ void alterarCentrifugacao(){
         lcd.locate(3 ,13);
         lcd.printf("Selecionado: %d ", selecao + 1);
         
-        wait_ms(100);
+        wait_ms(150);
     }
     
-    //TODO
-    //Alterar as configs da centrifugação
-    //potencia e tempo 
-    //
+    float temp=0;
+    wait_ms(500);
+    lcd.cls();
+    lcd.locate(3, 3);
+    lcd.printf("Tempo:");
+    while(iniciarPausar.read()==0){
+        if(selec1.read() == 1 && (tempo_centrifugacao[selecao]+temp) < 120.0 )
+            temp++;
+        if(selec2.read() == 1 && (tempo_centrifugacao[selecao]+temp) > 3.0 )
+            temp--;
+    
+        lcd.locate(3, 13);
+        lcd.printf("%3.1fs, 1-Aumenta 2-Diminui",tempo_centrifugacao[selecao]+temp);
+    
+        wait_ms(50);
+    }
+    tempo_centrifugacao[selecao] += temp;
+    
+    temp=0;
+    wait_ms(500);
+    lcd.cls();
+    lcd.locate(3, 3);
+    lcd.printf("Potencia:");
+    while(iniciarPausar.read()==0){
+        if(selec1.read() == 1 && (DC[selecao]+temp) < 0.9 )
+            temp+=0.05;
+        if(selec2.read() == 1 && (DC[selecao]+temp) > 0.2 )
+            temp-=0.05;
+    
+        lcd.locate(3, 13);
+        lcd.printf("%3.1f%%, 1-Aumenta 2-Diminui",100*(DC[selecao]+temp));
+    
+        wait_ms(50);
+    }
+    DC[selecao]+=temp;
+    lcd.cls();
+    lcd.locate(3, 3);
+    lcd.printf("Configuracoes");
+    lcd.locate(3, 13);
+    lcd.printf("Alteradas");
+    wait_ms(1750);
     
 }
 
 void perguntaAlterarCentrifugacao(){
-    pause = 1;
     int ok = 0;
     lcd.cls();
     lcd.locate(3, 3);
@@ -290,7 +332,9 @@ void perguntaAlterarCentrifugacao(){
     lcd.printf("de centrifugacao? 1-S 2-N");
     while(!ok){
         if(selec1.read()==1){
+            selecaoMode=1;
             alterarCentrifugacao();
+            selecaoMode=0;
             ok=1;
         }
         if(selec2.read()==1)
@@ -302,10 +346,10 @@ void perguntaAlterarCentrifugacao(){
 
 int escolhaOperacao(){
     int selecao = 0;
-    pause = 1; //para quando apertar o iniciar pausa de escolha sair do interrupt do botão
+    selecaoMode = 1; //para quando apertar o iniciar pausa de escolha sair do interrupt do botão sem mudar o pause
     lcd.cls();
     lcd.locate(3, 3);
-    lcd.printf("Selecione o programa");
+    lcd.printf("Selecione o programa,");
     lcd.locate(3, 13);
     lcd.printf("Inicar/Pausar p/ comecar");
     wait_ms(1750);
@@ -326,26 +370,24 @@ int escolhaOperacao(){
         wait_ms(100);
     }
     
-    
-    pause = 0; //interrupt do botão volta a funcionar
-    
     printSelecao(selecao);
+    
+    selecaoMode = 0; //interrupt do botão volta a funcionar
     
     return selecao;
 }
 
 int main()
-{
+{   
+    t1.attach(callback(&controleEstados), 0.5f);
     int start = 1, i, id_operacao;
     
-    //Tem q pensar melhor como fazer isso
-    //provavelmente só dps que usarmos interrupt para esperar
-    //iniciarPausar.fall(callback(&interPause));
+    //pause não funcionando, inutil por enquanto
+    interIniPausar.fall(callback(&interPause));
 
     while (1)
     {
-        //ainda não terminei 
-        //perguntaAlterarCentrifugacao();
+        perguntaAlterarCentrifugacao();
         
         id_operacao = escolhaOperacao();
         if (start)
@@ -366,3 +408,50 @@ int main()
         lcd.printf("Programa Finalizado!");
     }
 }
+
+/*
+    contIniciarPausar = 0;
+    contLigarDesligar = 0;
+*/
+void controleEstados(){
+    //ticker de 1 seg que conta os seg que um botaõ foi pressionado e se esta em pause
+   
+   /* //pause não esta funcionando mt bem
+        // acabe travando tudo
+    if(pause){
+        lcd.locate(110, 1);
+        lcd.printf("P"); //coloca um P no canto superior direito mostrando q esta pausado
+        
+        //TODO 
+        //Rotina para desligar motores,... (pg 11 do pdf do trab)
+        
+        while(pause)
+            wait_ms(60);
+
+        lcd.locate(110, 1);
+        lcd.printf(">");
+    }
+    */
+    
+    //Já esta aqui o liga desliga mas não faz nada ainda
+    if(ligaDesliga.read() == 1)
+        contLigarDesligar++;
+    else
+        contLigarDesligar=0;
+    //como o ticker é de 0.5seg tem q ser 6 e 4
+    if(ligado && contLigarDesligar==6){
+        ligado = 0;
+        contLigarDesligar = 0;
+    }
+    if(!ligado && contLigarDesligar==4){
+        ligado = 1;
+        contLigarDesligar = 0;
+    }
+
+}
+
+
+
+
+
+
