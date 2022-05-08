@@ -46,7 +46,7 @@ static int status = 0; // variavel que indica em qual operação a maquina está
 
 static int id;
 static int voltoL = 0;
-static int ligado = 1;
+static int ligado = 0;
 static int selecaoMode = 0; // usa o iniciarPausar pra selecionar então uma flag pra não pausar na seleção
 static int pause = 0;       // indica se a maquina esta pausada ou não (começa pausada)
 static int contLigarDesligar = 0;
@@ -384,33 +384,32 @@ int main()
     interIniPausar.fall(callback(&interPause));
     // aparentemente essas interrupções bugam os tempos do sistema, delay fica todo  errado
     // interVoltoLogo.fall(callback(&interVL));
-    
+    printf("Iniciando");
     while (1)
     {
 
         //gostaria de fazer q se segurar o botão 1 por x segs entra no modo de configurar
         //só poderia entrar no modo de configurar de o status = 0 (não operando)
-        perguntaAlterarCentrifugacao();
-        id_operacao = escolhaOperacao();
-        if (start)
+        if (ligado)
         {
-
+            perguntaAlterarCentrifugacao();
+            id_operacao = escolhaOperacao();
+        
             for (i = 0; i < nro_enxagues[id_operacao]; i++)
             {
                 processo_molho(id_operacao);
                 processo_centrifugacao(id_operacao);
                 processo_enxague();
-                // start = 0;
             }
             processo_secagem(id_operacao);
             status = 0;
+        
+            wait(1);
+            lcd.cls();
+            lcd.locate(3, 3);
+            lcd.printf("Programa Finalizado!");
+            wait(2);
         }
-        wait(1);
-        lcd.cls();
-        lcd.locate(3, 3);
-        lcd.printf("Programa Finalizado!");
-        wait(2);
-
         if (voltoL == 1)
         {
             wait(1);
@@ -432,8 +431,12 @@ int main()
             lcd.locate(3, 3);
             lcd.printf("Volto Logo desativado!");
             wait(3);
+        }else{
+            //Se não tiver com volto logo é pra desligar
+            ligado = 0;
         }
-        lcd.cls();
+        wait_ms(10);
+		lcd.cls();
     }
 }
 
@@ -519,9 +522,8 @@ void saiPause(){
 
 void controleEstados()
 {
-    //acho q esta funcionando
     if(pause){
-        // FAZER FUNC PRA DESLIGAR MOTORES, ... (pg 11 pdf projeto)
+        
         entraPause();
         wait_ms(10);
         lcd.cls();
@@ -540,6 +542,7 @@ void controleEstados()
         lcd.cls();
         saiPause();
         wait(2);
+        lcd.cls();
     }
 
     // Já esta aqui o liga desliga mas não faz nada ainda
@@ -548,16 +551,23 @@ void controleEstados()
     else
         contLigarDesligar = 0;
     // como o ticker é de 0.5seg tem q ser 6 e 4
-    if (ligado && contLigarDesligar == 6)
+    
+    if (ligado && contLigarDesligar >= 6)
     {
         ligado = 0;
         contLigarDesligar = 0;
     }
-    if (!ligado && contLigarDesligar == 4)
+    if (!ligado && contLigarDesligar >= 4)
     {
         ligado = 1;
         contLigarDesligar = 0;
     }
     
+    if(ligado==0){
+        lcd.cls();
+        entraPause();
+    }
+    
+  
     
 }
