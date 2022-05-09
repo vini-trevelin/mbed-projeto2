@@ -22,7 +22,8 @@ DigitalIn selec2(p18); // botão de seleciona 2
 
 InterruptIn interIniPausar(p13);
 InterruptIn interVoltoLogo(p16);
-
+InterruptIn interLigDeslig(p12);
+InterruptIn interPortaAber(p10);
 // Usei o delay para colocar os tempos mas provavelmente vamos ter q usar interrupt (por causa do pause)
 
 // Criei IDS para os tipos de operação:
@@ -50,7 +51,7 @@ static int ligado = 0;
 static int selecaoMode = 0; // usa o iniciarPausar pra selecionar então uma flag pra não pausar na seleção
 static int pause = 0;       // indica se a maquina esta pausada ou não (começa pausada)
 static int contLigarDesligar = 0;
-
+static int continuar = 1; //quando aperta ligDeslig é pra não terminar o programa
 static char modos[8][14] = {"Dia a Dia","Rapido","Coloridas","Brancas","Cama e Banho","Delicadas","Pesado/Jeans","1 Hr pronto"};
 // etapa 1
 static int volume_enchimento[] = {50, 30, 70, 70, 90, 60, 90, 23}; // array com todas volumes (L) de água por ordem de ID
@@ -79,6 +80,9 @@ void verificarPorta()
         lcd.printf("Feche a porta");
         wait_ms(250);
     }
+    wait_ms(25);
+    lcd.cls();
+    wait_ms(25);
 }
 
 void interVL()
@@ -92,11 +96,26 @@ void interVL()
 
 void interPause()
 { // só troca o estado de pause, quem pausa é o ticker
-    if (!selecaoMode)
+    if (!selecaoMode && status != 0 &&  ligado)
     {
         pause = !pause;
         wait_ms(50); // estava lendo duas vezes a mesma apertada
     }
+}
+
+void interLD()
+{
+    /*
+    Apertando ligDeslig no meio de um processo vai cancela-lo
+    Saindo daquele for q vai realizando cada parte
+    continuar volta a ser 1 antes de entrar no for
+    */
+    continuar = 0;
+}
+
+void interPorta(){ //para pedir que a porta seja fechada mesmo no meio de um processo
+    if(status != 0)
+        verificarPorta();
 }
 
 int processo_molho(int id)
@@ -107,7 +126,7 @@ int processo_molho(int id)
     //tive q colocar tudo no while pra não bugar a tela quando voltar do paus
     while (nivel < volume_enchimento[id])
     {
-    
+        lcd.cls();
         lcd.locate(3, 13);
         lcd.printf("Programa necessita: %d L", volume_enchimento[id]);
         lcd.printf(" %d", status);
@@ -119,7 +138,7 @@ int processo_molho(int id)
     }
 
     verificarPorta();
-
+    
     lcd.cls();
     lcd.locate(3, 3);
     lcd.printf("Roupas de molho");
@@ -139,10 +158,10 @@ int processo_molho(int id)
 int processo_enxague()
 {
     float nivel;
-    lcd.cls();
     status = 3;
     do
-    {
+    {   
+        lcd.cls();
         lcd.locate(3, 13);
         lcd.printf("Programa necessita: 0 L");
         lcd.printf("  %d", status);
@@ -176,6 +195,7 @@ int processo_centrifugacao(int id)
     
     do
     {
+        lcd.cls();
         lcd.locate(3, 3);
         lcd.printf("Realizando ");
         lcd.locate(3, 13);
@@ -205,6 +225,7 @@ int processo_secagem(int id)
     status = 4;
     while (temp < temperatura_secagem[id])
     {
+        lcd.cls();
         lcd.locate(3, 13);
         lcd.printf("Programa necessita: %d C", temperatura_secagem[id]);
         lcd.printf(" %d", status);
@@ -382,6 +403,12 @@ int main()
     int start = 1, i, id_operacao; 
     
     interIniPausar.fall(callback(&interPause));
+    interLigDeslig.fall(callback(&interLD));
+    
+    //Buga mais ainda os tempos
+    //interPortaAber.fall(callback(&interPorta));
+    //interPortaAber.rise(callback(&interPorta));
+    
     // aparentemente essas interrupções bugam os tempos do sistema, delay fica todo  errado
     // interVoltoLogo.fall(callback(&interVL));
     printf("Iniciando");
@@ -394,16 +421,28 @@ int main()
         {
             perguntaAlterarCentrifugacao();
             id_operacao = escolhaOperacao();
-        
+            continuar = 1;
             for (i = 0; i < nro_enxagues[id_operacao]; i++)
             {
                 processo_molho(id_operacao);
+                
+                if(!continuar)
+                    break;
+                
                 processo_centrifugacao(id_operacao);
+                
+                if(!continuar)
+                    break;
+                    
                 processo_enxague();
+                
+                if(!continuar)
+                    break;
             }
-            processo_secagem(id_operacao);
+            if(continuar)
+                processo_secagem(id_operacao);
+            
             status = 0;
-        
             wait(1);
             lcd.cls();
             lcd.locate(3, 3);
@@ -431,12 +470,15 @@ int main()
             lcd.locate(3, 3);
             lcd.printf("Volto Logo desativado!");
             wait(3);
-        }else{
-            //Se não tiver com volto logo é pra desligar
-            ligado = 0;
         }
+        
+        //Se não tiver com volto logo é pra desligar
+        //então fica preso ali no volto logo
+        //quando sair desliga aqui
+        //controleEstados desliga ela
+        ligado = 0;
         wait_ms(10);
-		lcd.cls();
+        lcd.cls();
     }
 }
 
@@ -538,14 +580,14 @@ void controleEstados()
         lcd.locate(3, 13);
         //0 - n operando , 1 - enchimento/molho, 2 - centrifugação, 3 - enxague, 4 - secagem
         char processos[5][16] = {"",": Molho" ,": Centrifugacao",": Enxague",": Secagem"};
-        lcd.printf("Retomando%s",processos[status]);
+        lcd.printf("Retomando%s", processos[status]);
         lcd.cls();
         saiPause();
         wait(2);
         lcd.cls();
     }
 
-    // Já esta aqui o liga desliga mas não faz nada ainda
+
     if (ligaDesliga.read() == 1)
         contLigarDesligar++;
     else
@@ -567,7 +609,5 @@ void controleEstados()
         lcd.cls();
         entraPause();
     }
-    
-  
-    
+      
 }
