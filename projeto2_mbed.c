@@ -80,10 +80,9 @@ void verificarPorta()
         lcd.locate(3, 3);
         lcd.printf("Feche a porta");
         wait_ms(250);
+        lcd.cls();
+        
     }
-    wait_ms(25);
-    lcd.cls();
-    wait_ms(25);
 }
 
 void interPause()
@@ -105,23 +104,17 @@ void interLD()
     continuar = 0;
 }
 
-void interPorta()
-{ // para pedir que a porta seja fechada mesmo no meio de um processo
-    if (status != 0)
-        verificarPorta();
-}
-
 int processo_molho(int id)
 {
     float nivel = 0.0;
     lcd.cls();
     status = 1;
 
-    verificarPorta();
 
     // tive q colocar tudo no while pra não bugar a tela quando voltar do paus
     while (nivel < volume_enchimento[id])
     {
+        verificarPorta();
         lcd.cls();
         lcd.locate(3, 13);
         lcd.printf("Programa necessita: %d L", volume_enchimento[id]);
@@ -137,6 +130,7 @@ int processo_molho(int id)
     lcd.printf("Roupas de molho");
     lcd.locate(3, 13);
     lcd.printf("Aguarde %d segundos", tempo_molho[id]);
+    verificarPorta();
     wait(tempo_molho[id]);
 
     lcd.cls();
@@ -154,6 +148,7 @@ int processo_enxague()
     status = 3;
     do
     {
+        verificarPorta();
         lcd.cls();
         lcd.locate(3, 13);
         lcd.printf("Programa necessita: 0 L");
@@ -183,10 +178,10 @@ int processo_centrifugacao(int id)
     status = 2;
     led_motor.period(1);
 
-    verificarPorta();
 
     do
     {
+        verificarPorta();
         lcd.cls();
         lcd.locate(3, 3);
         lcd.printf("Realizando ");
@@ -217,6 +212,7 @@ int processo_secagem(int id)
     status = 4;
     while (temp < temperatura_secagem[id])
     {
+        verificarPorta();
         lcd.cls();
         lcd.locate(3, 13);
         lcd.printf("Programa necessita: %d C", temperatura_secagem[id]);
@@ -337,7 +333,7 @@ void perguntaAlterarCentrifugacao()
             ok = 1;
         wait_ms(100);
     }
-    wait(2);
+    wait(1);
 }
 
 int escolhaOperacao()
@@ -411,18 +407,10 @@ int main()
     interIniPausar.fall(callback(&interPause));
     interLigDeslig.fall(callback(&interLD));
 
-    // Buga mais ainda os tempos
-    // interPortaAber.fall(callback(&interPorta));
-    // interPortaAber.rise(callback(&interPorta));
-
-    // aparentemente essas interrupções bugam os tempos do sistema, delay fica todo  errado
-    // interVoltoLogo.fall(callback(&interVL));
     printf("Iniciando");
     while (1)
     {
 
-        // gostaria de fazer q se segurar o botão 1 por x segs entra no modo de configurar
-        // só poderia entrar no modo de configurar de o status = 0 (não operando)
         if (ligado)
         {
             perguntaAlterarCentrifugacao();
@@ -512,12 +500,9 @@ void saiPause()
     Coisas que precisamos ligar de novo
     Só percebi o aquecedor pq caso esteja esperando a secagem e tenha um pause
     na saida do pause estaria desligado o aquecedor.
-
     O motor por exemplo fica ligando e desligado sozinho em um loop
     então na volta de um pause não teria problema
-
     tb pede pra colocar os niveis corretos
-
     */
     float nivel = 0, temp = 0;
 
