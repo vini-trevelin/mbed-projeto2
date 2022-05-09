@@ -16,12 +16,12 @@ DigitalIn porta(p10);                             // Porta da maquina (1 fechada
 DigitalIn ligaDesliga(p12);
 DigitalIn iniciarPausar(p13); // botão de iniciar pausar a maquina
 DigitalIn hrPronto(p14);      // botão 1hr pronto
-// DigitalIn voltoLogo(p16);                         // botão VOLTO LOGO
-DigitalIn selec1(p17); // botão de seleciona 1
-DigitalIn selec2(p18); // botão de seleciona 2
+DigitalIn voltoLogo(p16);     // botão VOLTO LOGO
+DigitalIn selec1(p17);        // botão de seleciona 1
+DigitalIn selec2(p18);        // botão de seleciona 2
 
 InterruptIn interIniPausar(p13);
-InterruptIn interVoltoLogo(p16);
+// InterruptIn interVoltoLogo(p16);
 InterruptIn interLigDeslig(p12);
 InterruptIn interPortaAber(p10);
 // Usei o delay para colocar os tempos mas provavelmente vamos ter q usar interrupt (por causa do pause)
@@ -45,14 +45,15 @@ InterruptIn interPortaAber(p10);
 static int status = 0; // variavel que indica em qual operação a maquina está:
 // 0 - não operando, 1 - enchimento/molho, 2 - centrifugação, 3 - enxague, 4 - secagem
 
+int aux = 10; // tempo em segundos para pergunto sobre volto logo
 static int id;
 static int voltoL = 0;
 static int ligado = 0;
 static int selecaoMode = 0; // usa o iniciarPausar pra selecionar então uma flag pra não pausar na seleção
 static int pause = 0;       // indica se a maquina esta pausada ou não (começa pausada)
 static int contLigarDesligar = 0;
-static int continuar = 1; //quando aperta ligDeslig é pra não terminar o programa
-static char modos[8][14] = {"Dia a Dia","Rapido","Coloridas","Brancas","Cama e Banho","Delicadas","Pesado/Jeans","1 Hr pronto"};
+static int continuar = 1; // quando aperta ligDeslig é pra não terminar o programa
+static char modos[8][14] = {"Dia a Dia", "Rapido", "Coloridas", "Brancas", "Cama e Banho", "Delicadas", "Pesado/Jeans", "1 Hr pronto"};
 // etapa 1
 static int volume_enchimento[] = {50, 30, 70, 70, 90, 60, 90, 23}; // array com todas volumes (L) de água por ordem de ID
 static int tempo_molho[] = {10, 5, 15, 5, 18, 12, 17, 6};          // array com todos tempos de molho por ordem de ID
@@ -85,18 +86,9 @@ void verificarPorta()
     wait_ms(25);
 }
 
-void interVL()
-{ // só troca o estado de volto logo
-    if (status == 0)
-    {
-        voltoL = !voltoL;
-        wait_ms(50);
-    }
-}
-
 void interPause()
 { // só troca o estado de pause, quem pausa é o ticker
-    if (!selecaoMode && status != 0 &&  ligado)
+    if (!selecaoMode && status != 0 && ligado)
     {
         pause = !pause;
         wait_ms(50); // estava lendo duas vezes a mesma apertada
@@ -113,8 +105,9 @@ void interLD()
     continuar = 0;
 }
 
-void interPorta(){ //para pedir que a porta seja fechada mesmo no meio de um processo
-    if(status != 0)
+void interPorta()
+{ // para pedir que a porta seja fechada mesmo no meio de um processo
+    if (status != 0)
         verificarPorta();
 }
 
@@ -123,13 +116,15 @@ int processo_molho(int id)
     float nivel = 0.0;
     lcd.cls();
     status = 1;
-    //tive q colocar tudo no while pra não bugar a tela quando voltar do paus
+
+    verificarPorta();
+
+    // tive q colocar tudo no while pra não bugar a tela quando voltar do paus
     while (nivel < volume_enchimento[id])
     {
         lcd.cls();
         lcd.locate(3, 13);
         lcd.printf("Programa necessita: %d L", volume_enchimento[id]);
-        lcd.printf(" %d", status);
 
         nivel = sht31.readHumidity();
         lcd.locate(3, 3);
@@ -137,8 +132,6 @@ int processo_molho(int id)
         wait_ms(100);
     }
 
-    verificarPorta();
-    
     lcd.cls();
     lcd.locate(3, 3);
     lcd.printf("Roupas de molho");
@@ -160,11 +153,10 @@ int processo_enxague()
     float nivel;
     status = 3;
     do
-    {   
+    {
         lcd.cls();
         lcd.locate(3, 13);
         lcd.printf("Programa necessita: 0 L");
-        lcd.printf("  %d", status);
 
         nivel = sht31.readHumidity();
         lcd.locate(3, 3);
@@ -192,7 +184,7 @@ int processo_centrifugacao(int id)
     led_motor.period(1);
 
     verificarPorta();
-    
+
     do
     {
         lcd.cls();
@@ -228,10 +220,6 @@ int processo_secagem(int id)
         lcd.cls();
         lcd.locate(3, 13);
         lcd.printf("Programa necessita: %d C", temperatura_secagem[id]);
-        lcd.printf(" %d", status);
-
-        led_aquecedor = 1;
-
         temp = sht31.readTemperature();
         lcd.locate(3, 3);
         lcd.printf("Temperatura: %.2f C", temp);
@@ -239,6 +227,7 @@ int processo_secagem(int id)
     }
 
     verificarPorta();
+    led_aquecedor = 1;
 
     lcd.cls();
     lcd.locate(3, 3);
@@ -246,8 +235,8 @@ int processo_secagem(int id)
     lcd.locate(3, 13);
     lcd.printf("Aguarde %d segundos", tempo_secagem[id]);
     wait(tempo_secagem[id]);
-    
-    status = 0; //para quando voltar de um pause saber q naõ precisa ligar mais o aquecedor
+
+    status = 0; // para quando voltar de um pause saber q naõ precisa ligar mais o aquecedor
     led_aquecedor = 0;
 
     lcd.cls();
@@ -258,7 +247,6 @@ int processo_secagem(int id)
     wait(4);
     return 1;
 }
-
 
 void alterarCentrifugacao()
 {
@@ -384,39 +372,57 @@ int escolhaOperacao()
         wait_ms(100);
     }
 
+    while (aux != 0)
+    {
+        lcd.locate(3, 3);
+        lcd.printf("Volto Logo? (%d segundos)", aux);
+        if (voltoLogo.read() == 1 && voltoL == 0)
+            voltoL = 1;
+
+        if (voltoLogo.read() == 0 && voltoL == 0)
+            voltoL = 0;
+
+        lcd.locate(3, 13);
+        lcd.printf("(1) ON (0) OFF --> %d", voltoL);
+
+        wait_ms(1000);
+        aux--;
+    }
+    aux = 10;
+
     lcd.cls();
     lcd.locate(3, 3);
     lcd.printf("Iniciando Programa");
     lcd.locate(3, 13);
-    lcd.printf("%s",modos[selecao]);
+    lcd.printf("%s", modos[selecao]);
 
-    wait(2);    
-    
+    wait(2);
+
     selecaoMode = 0; // interrupt do botão volta a funcionar
-    id = selecao; //pro pause
+    id = selecao;    // pro pause
     return selecao;
 }
 
 int main()
 {
     t1.attach(callback(&controleEstados), 0.5f);
-    int start = 1, i, id_operacao; 
-    
+    int start = 1, i, id_operacao;
+
     interIniPausar.fall(callback(&interPause));
     interLigDeslig.fall(callback(&interLD));
-    
-    //Buga mais ainda os tempos
-    //interPortaAber.fall(callback(&interPorta));
-    //interPortaAber.rise(callback(&interPorta));
-    
+
+    // Buga mais ainda os tempos
+    // interPortaAber.fall(callback(&interPorta));
+    // interPortaAber.rise(callback(&interPorta));
+
     // aparentemente essas interrupções bugam os tempos do sistema, delay fica todo  errado
     // interVoltoLogo.fall(callback(&interVL));
     printf("Iniciando");
     while (1)
     {
 
-        //gostaria de fazer q se segurar o botão 1 por x segs entra no modo de configurar
-        //só poderia entrar no modo de configurar de o status = 0 (não operando)
+        // gostaria de fazer q se segurar o botão 1 por x segs entra no modo de configurar
+        // só poderia entrar no modo de configurar de o status = 0 (não operando)
         if (ligado)
         {
             perguntaAlterarCentrifugacao();
@@ -425,23 +431,23 @@ int main()
             for (i = 0; i < nro_enxagues[id_operacao]; i++)
             {
                 processo_molho(id_operacao);
-                
-                if(!continuar)
+
+                if (!continuar)
                     break;
-                
+
                 processo_centrifugacao(id_operacao);
-                
-                if(!continuar)
+
+                if (!continuar)
                     break;
-                    
+
                 processo_enxague();
-                
-                if(!continuar)
+
+                if (!continuar)
                     break;
             }
-            if(continuar)
+            if (continuar)
                 processo_secagem(id_operacao);
-            
+
             status = 0;
             wait(1);
             lcd.cls();
@@ -449,6 +455,7 @@ int main()
             lcd.printf("Programa Finalizado!");
             wait(2);
         }
+
         if (voltoL == 1)
         {
             wait(1);
@@ -460,22 +467,23 @@ int main()
             wait(2);
             do
             {
+                // como não consegui usar interrupt, tem que ficar clicando no botão pra desligar
                 led_motor = 0.3;
                 wait(7);
                 led_motor = 0;
                 wait(14); // deixei 14 s para testar (mudar pra 1 min)
-            } while (voltoL == 1);
+            } while (voltoLogo.read() == 0);
             voltoL = 0;
             lcd.cls();
             lcd.locate(3, 3);
             lcd.printf("Volto Logo desativado!");
             wait(3);
         }
-        
-        //Se não tiver com volto logo é pra desligar
-        //então fica preso ali no volto logo
-        //quando sair desliga aqui
-        //controleEstados desliga ela
+
+        // Se não tiver com volto logo é pra desligar
+        // então fica preso ali no volto logo
+        // quando sair desliga aqui
+        // controleEstados desliga ela
         ligado = 0;
         wait_ms(10);
         lcd.cls();
@@ -487,7 +495,8 @@ int main()
     contLigarDesligar = 0;
 */
 
-void entraPause(){
+void entraPause()
+{
     /*
     Não acho q tem mais coisa pra desligar,
     mas se tiver só add e prestar atenção se precisa explicitamente ligar de novo
@@ -497,89 +506,93 @@ void entraPause(){
     led_motor = 0;
 }
 
-void saiPause(){
+void saiPause()
+{
     /*
     Coisas que precisamos ligar de novo
     Só percebi o aquecedor pq caso esteja esperando a secagem e tenha um pause
     na saida do pause estaria desligado o aquecedor.
-    
+
     O motor por exemplo fica ligando e desligado sozinho em um loop
     então na volta de um pause não teria problema
-    
-    tb pede pra colocar os niveis corretos
-    
-    */
-    float nivel=0, temp=0;
-    
-    switch(status){
-        case 1:
-            lcd.cls();
-            while (nivel < volume_enchimento[id]){
-                lcd.locate(3, 13);
-                lcd.printf("Programa necessita: %d L", volume_enchimento[id]);
-                lcd.printf(" %d", status);
 
-                nivel = sht31.readHumidity();
-                lcd.locate(3, 3);
-                lcd.printf("Nivel: %.2f L", nivel);
-                wait_ms(100);
-            }
+    tb pede pra colocar os niveis corretos
+
+    */
+    float nivel = 0, temp = 0;
+
+    switch (status)
+    {
+    case 1:
+        lcd.cls();
+        while (nivel < volume_enchimento[id])
+        {
+            lcd.locate(3, 13);
+            lcd.printf("Programa necessita: %d L", volume_enchimento[id]);
+
+            nivel = sht31.readHumidity();
+            lcd.locate(3, 3);
+            lcd.printf("Nivel: %.2f L", nivel);
+            wait_ms(100);
+        }
         break;
-        
+
         /*case 2:
         //não precisa retomar nada da centrifugação
         break;*/
-        
-        case 3:
-            while (10.0 < nivel){
-                lcd.locate(3, 13);
-                lcd.printf("Programa necessita: 0 L");
-                lcd.printf("  %d", status);
 
-                nivel = sht31.readHumidity();
-                lcd.locate(3, 3);
-                lcd.printf("Nivel: %.2f L", nivel);
-                wait_ms(100);
-            } 
+    case 3:
+        while (10.0 < nivel)
+        {
+            lcd.locate(3, 13);
+            lcd.printf("Programa necessita: 0 L");
+
+            nivel = sht31.readHumidity();
+            lcd.locate(3, 3);
+            lcd.printf("Nivel: %.2f L", nivel);
+            wait_ms(100);
+        }
         break;
-        
-        case 4:
-            while (temp < temperatura_secagem[id]){
-                lcd.locate(3, 13);
-                lcd.printf("Programa necessita: %d C", temperatura_secagem[id]);
-                lcd.printf(" %d", status);
 
-                led_aquecedor = 1;
+    case 4:
+        while (temp < temperatura_secagem[id])
+        {
+            lcd.locate(3, 13);
+            lcd.printf("Programa necessita: %d C", temperatura_secagem[id]);
 
-                temp = sht31.readTemperature();
-                lcd.locate(3, 3);
-                lcd.printf("Temperatura: %.2f C", temp);
-                wait_ms(100);
-            }
-            break;
-        default:
-            break;
-    } 
+            led_aquecedor = 1;
+
+            temp = sht31.readTemperature();
+            lcd.locate(3, 3);
+            lcd.printf("Temperatura: %.2f C", temp);
+            wait_ms(100);
+        }
+        break;
+    default:
+        break;
+    }
 }
 
 void controleEstados()
 {
-    if(pause){
-        
+    if (pause)
+    {
+
         entraPause();
         wait_ms(10);
         lcd.cls();
         lcd.locate(5, 3);
         lcd.printf("Sistema pausado");
-        while(pause){
+        while (pause)
+        {
             wait_ms(500);
         }
         lcd.cls();
         lcd.locate(3, 3);
         lcd.printf("Sistema despausado");
         lcd.locate(3, 13);
-        //0 - n operando , 1 - enchimento/molho, 2 - centrifugação, 3 - enxague, 4 - secagem
-        char processos[5][16] = {"",": Molho" ,": Centrifugacao",": Enxague",": Secagem"};
+        // 0 - n operando , 1 - enchimento/molho, 2 - centrifugação, 3 - enxague, 4 - secagem
+        char processos[5][16] = {"", ": Molho", ": Centrifugacao", ": Enxague", ": Secagem"};
         lcd.printf("Retomando%s", processos[status]);
         lcd.cls();
         saiPause();
@@ -587,13 +600,12 @@ void controleEstados()
         lcd.cls();
     }
 
-
     if (ligaDesliga.read() == 1)
         contLigarDesligar++;
     else
         contLigarDesligar = 0;
     // como o ticker é de 0.5seg tem q ser 6 e 4
-    
+
     if (ligado && contLigarDesligar >= 6)
     {
         ligado = 0;
@@ -604,10 +616,10 @@ void controleEstados()
         ligado = 1;
         contLigarDesligar = 0;
     }
-    
-    if(ligado==0){
+
+    if (ligado == 0)
+    {
         lcd.cls();
         entraPause();
     }
-      
 }
